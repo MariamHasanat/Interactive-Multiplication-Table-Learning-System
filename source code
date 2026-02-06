@@ -50,10 +50,10 @@ unsigned long lastActionTime = 0;
 const unsigned long TIMEOUT_MS = 1500;
 
 String inputBuffer = "";                // User input buffer
-String resetSequence = "";              // Tracks reset code progress
+String resetSequence = "";              // Tracks reset code progress (e.g., "ABCD")
 int invalidAttempts = 0;
 const int MAX_INVALID_ATTEMPTS = 5;
-const String VALID_RESET_CODE = "ABCD#";
+const String VALID_RESET_CODE = "ABCD"; // Note: # is the TRIGGER, not part of sequence
 
 // ====== SETUP ======
 void setup() {
@@ -76,13 +76,12 @@ void setup() {
 void loop() {
   char key = keypad.getKey();
   
-  // ONLY intercept LETTERS for reset sequence during gameplay
+  // CRITICAL FIX: Intercept ALL keys during gameplay to handle reset sequence completion with #
   if (key && currentState == STATE_ASKING) {
-    if (key == 'A' || key == 'B' || key == 'C' || key == 'D') {
-      if (handleResetSequence(key)) {
-        return; // Reset sequence handled completely
-      }
+    if (handleResetAttempt(key)) {
+      return; // Reset sequence handled (either progress, completion, or error)
     }
+    // If not part of reset sequence, fall through to normal answer handling
   }
 
   switch (currentState) {
@@ -120,46 +119,91 @@ void loop() {
   }
 }
 
-// ====== RESET SEQUENCE HANDLER (TRIGGERS FULL RECONFIGURATION) ======
-bool handleResetSequence(char key) {
-  // Only 'A' can start a new sequence
-  if (resetSequence.length() == 0) {
-    if (key == 'A') {
-      resetSequence = "A";
-      showCodeProgress();
-      return true;
-    } else {
-      invalidAttempts++;
-      handleInvalidAttempt();
-      return true;
-    }
-  }
-  
-  // Validate next character
-  String expectedNext = VALID_RESET_CODE.substring(resetSequence.length(), resetSequence.length() + 1);
-  
-  if (String(key) == expectedNext) {
-    resetSequence += key;
-    
-    // Full sequence matched?
-    if (resetSequence == VALID_RESET_CODE) {
+// ====== RESET SEQUENCE HANDLER (FULLY ROBUST) ======
+// Returns true if key was consumed by reset logic (no further processing needed)
+bool handleResetAttempt(char key) {
+  // CASE 1: Sequence already complete ("ABCD" entered) - waiting for # to trigger reset
+  if (resetSequence == VALID_RESET_CODE) {
+    if (key == '#') {
+      // FULL RESET TRIGGERED - start reconfiguration
       resetSequence = "";
       invalidAttempts = 0;
-      // TRIGGER FULL RECONFIGURATION (table + min + max)
-      currentState = STATE_SELECT_TABLE;
-      showTableSelection();
-      return true;
+      triggerFullReset();
+      return true; // Consumed
     } else {
-      showCodeProgress();
-      return true;
+      // Wrong key after ABCD - invalidate sequence
+      resetSequence = "";
+      invalidAttempts++;
+      handleInvalidAttempt();
+      return true; // Consumed (error shown)
     }
-  } else {
-    // Sequence broken
-    invalidAttempts++;
-    resetSequence = "";
-    handleInvalidAttempt();
-    return true;
   }
+  
+  // CASE 2: Building sequence - only accept valid next character
+  if (key == 'A' || key == 'B' || key == 'C' || key == 'D') {
+    // Check if this is the expected next character
+    if (resetSequence.length() < VALID_RESET_CODE.length()) {
+      char expected = VALID_RESET_CODE.charAt(resetSequence.length());
+      
+      if (key == expected) {
+        resetSequence += key;
+        showResetProgress();
+        return true; // Consumed
+      } else {
+        // Wrong character in sequence
+        resetSequence = "";
+        invalidAttempts++;
+        handleInvalidAttempt();
+        return true; // Consumed (error shown)
+      }
+    }
+  }
+  
+  // CASE 3: Any other key (digits, *, etc.) breaks an incomplete sequence
+  if (resetSequence.length() > 0) {
+    resetSequence = "";
+    invalidAttempts++;
+    handleInvalidAttempt();
+    return true; // Consumed (error shown)
+  }
+  
+  // CASE 4: No active sequence - key not consumed (allow normal answer input)
+  return false;
+}
+
+void showResetProgress() {
+  lcd.clear();
+  delay(2);
+  lcd.setCursor(0, 0);
+  lcd.print("Enter Code:");
+  
+  // Show progress with actual characters entered so far
+  lcd.setCursor(0, 1);
+  lcd.print(resetSequence);
+  
+  // Show next expected character
+  if (resetSequence.length() < VALID_RESET_CODE.length()) {
+    lcd.print(" ");
+    lcd.print(VALID_RESET_CODE.charAt(resetSequence.length()));
+    lcd.print(" ...");
+  } else {
+    lcd.print(" # (confirm)");
+  }
+}
+
+void triggerFullReset() {
+  // Trigger complete reconfiguration flow
+  currentState = STATE_SELECT_TABLE;
+  showTableSelection();
+  
+  // Visual confirmation
+  lcd.clear();
+  delay(2);
+  lcd.setCursor(0, 0);
+  lcd.print("Select Table");
+  lcd.setCursor(0, 1);
+  lcd.print("0-99 then #");
+  delay(3000);
 }
 
 void handleInvalidAttempt() {
@@ -171,22 +215,6 @@ void handleInvalidAttempt() {
   }
 }
 
-void showCodeProgress() {
-  lcd.clear();
-  delay(2);
-  lcd.setCursor(0, 0);
-  lcd.print("Code:");
-  
-  // Show asterisks for entered characters + next expected hint
-  for (int i = 0; i < resetSequence.length(); i++) {
-    lcd.print("*");
-  }
-  if (resetSequence.length() < VALID_RESET_CODE.length() - 1) {
-    lcd.print(" ");
-    lcd.print(VALID_RESET_CODE.charAt(resetSequence.length()));
-  }
-}
-
 // ====== CONFIGURATION FLOW HANDLERS ======
 void showWelcome() {
   lcd.clear();
@@ -195,7 +223,7 @@ void showWelcome() {
   lcd.print("MULTIPLIER");
   lcd.setCursor(3, 1);
   lcd.print("TRAINER");
-  delay(2000);
+  delay(3500);
   
   lcd.clear();
   delay(2);
@@ -213,6 +241,7 @@ void showTableSelection() {
   lcd.setCursor(0, 1);
   lcd.print("0-99 then #");
   inputBuffer = "";
+  resetSequence = ""; // Clear any partial reset sequence
 }
 
 void handleTableSelection(char key) {
@@ -250,6 +279,7 @@ void handleTableSelection(char key) {
       showError("Enter number!");
     }
   }
+  // During configuration, ignore reset code attempts
 }
 
 void showMinSelection() {
@@ -336,7 +366,7 @@ void handleMaxSelection(char key) {
       if (maxMultiplier >= 0 && maxMultiplier <= 99) {
         if (maxMultiplier < minMultiplier) {
           showError("MAX < MIN!");
-          delay(1200);
+          delay(3000);
           showMaxSelection();
         } else {
           // ALL CONFIGURATION COMPLETE - START GAMEPLAY
@@ -416,7 +446,7 @@ void handleAnswerInput(char key) {
       showError("Enter answer!");
     }
   }
-  // Letters handled by reset sequence handler at top of loop()
+  // Note: Reset sequence handling happens BEFORE this function via handleResetAttempt()
 }
 
 void handleCorrectAnswer() {
@@ -427,9 +457,16 @@ void handleCorrectAnswer() {
   digitalWrite(RED_LED, LOW);
   
   // Victory melody
-  tone(BUZZER_PIN, 1000, 120); delay(130);
-  tone(BUZZER_PIN, 1500, 120); delay(130);
-  tone(BUZZER_PIN, 2000, 120); delay(130);
+  tone(BUZZER_PIN, 1000, 120); delay(260);
+  tone(BUZZER_PIN, 1500, 120); delay(260);
+  tone(BUZZER_PIN, 2000, 120); delay(260);
+  tone(BUZZER_PIN, 1000, 120); delay(260);
+  tone(BUZZER_PIN, 1500, 120); delay(260);
+  tone(BUZZER_PIN, 2000, 120); delay(260);
+  tone(BUZZER_PIN, 1000, 120); delay(260);
+  tone(BUZZER_PIN, 1500, 120); delay(260);
+  tone(BUZZER_PIN, 2000, 120); delay(260);
+
   noTone(BUZZER_PIN);
   
   lcd.clear();
@@ -437,8 +474,8 @@ void handleCorrectAnswer() {
   lcd.setCursor(0, 0);
   lcd.print("CORRECT! :)");
   lcd.setCursor(0, 1);
-  lcd.print("Score: ");
-  lcd.print(random(100, 999));
+  lcd.print("Congratulations !!");
+
 }
 
 void handleIncorrectAnswer(int userAnswer) {
@@ -449,7 +486,8 @@ void handleIncorrectAnswer(int userAnswer) {
   digitalWrite(GREEN_LED, LOW);
   
   // Error sound
-  tone(BUZZER_PIN, 300, 300); delay(320);
+  tone(BUZZER_PIN, 300, 300); 
+  delay(2000);
   noTone(BUZZER_PIN);
   
   lcd.clear();
@@ -470,7 +508,7 @@ void showError(String message) {
   lcd.print("ERROR");
   lcd.setCursor(0, 1);
   lcd.print(message);
-  delay(1500);
+  delay(3000);
 }
 
 void showResetHint() {
@@ -485,6 +523,7 @@ void showResetHint() {
   // Return to gameplay state
   if (tableNumber > 0 && minMultiplier <= maxMultiplier) {
     currentState = STATE_ASKING;
+    lcd.clear();
     displayQuestion();
   } else {
     currentState = STATE_SELECT_TABLE;
