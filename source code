@@ -308,6 +308,7 @@ void handleTableSelection(char key) {
       }
     } else {
       showError("Enter number!");
+      // Optional enhancement: displayTableSelection(); after error
     }
   }
   // During configuration, ignore reset code attempts
@@ -356,6 +357,7 @@ void handleMinSelection(char key) {
       }
     } else {
       showError("Enter value!");
+      // Optional enhancement: displayMinSelection(); after error
     }
   }
 }
@@ -412,6 +414,7 @@ void handleMaxSelection(char key) {
       }
     } else {
       showError("Enter value!");
+      // Optional enhancement: displayMaxSelection(); after error
     }
   }
 }
@@ -475,6 +478,7 @@ void handleAnswerInput(char key) {
       }
     } else {
       showError("Enter answer!");
+      displayQuestion(); // ✅ CRITICAL FIX: Restore UI after error message
     }
   }
   // Note: Reset sequence handling happens BEFORE this function via handleResetAttempt()
@@ -529,7 +533,7 @@ void showError(String message) {
   lcd.print("ERROR");
   lcd.setCursor(0, 1);
   lcd.print(message);
-  delay(3000);
+  delay(1000);
 }
 
 void showResetHint() {
