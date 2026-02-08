@@ -29,6 +29,37 @@ byte rowPins[ROWS] = {9, 8, 7, 6};      // R1→9, R2→8, R3→7, R4→6
 byte colPins[COLS] = {14, 15, 16, 17};  // A0=14, A1=15, A2=16, A3=17
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
+// Extended victory melody (1.8 seconds total)
+void playVictoryMelody() {
+  // Sequence: Rising triplets with rhythmic pauses
+  tone(BUZZER_PIN, 1000, 150); delay(160);
+  tone(BUZZER_PIN, 1300, 150); delay(160);
+  tone(BUZZER_PIN, 1600, 150); delay(200);
+  
+  tone(BUZZER_PIN, 1000, 150); delay(160);
+  tone(BUZZER_PIN, 1300, 150); delay(160);
+  tone(BUZZER_PIN, 1600, 150); delay(200);
+  
+  tone(BUZZER_PIN, 1200, 200); delay(210);
+  tone(BUZZER_PIN, 1800, 250); delay(260);
+  noTone(BUZZER_PIN);
+}
+
+// Extended error sound (1.2 seconds total)
+void playErrorSound() {
+  // Sad descending tones with vibration effect
+  tone(BUZZER_PIN, 400, 200); delay(210);
+  tone(BUZZER_PIN, 300, 200); delay(210);
+  tone(BUZZER_PIN, 200, 300); delay(310);
+  
+  // Vibration effect (rapid low pulses)
+  for (int i = 0; i < 4; i++) {
+    tone(BUZZER_PIN, 150, 60);
+    delay(70);
+  }
+  noTone(BUZZER_PIN);
+}
+
 // ====== GLOBAL VARIABLES ======
 enum State {
   STATE_WELCOME,
@@ -47,7 +78,7 @@ int maxMultiplier = 20;
 int currentA = 0, currentB = 0;
 int answer = 0;
 unsigned long lastActionTime = 0;
-const unsigned long TIMEOUT_MS = 1500;
+const unsigned long TIMEOUT_MS = 2500;  // WAS 1500 - now 2.5 seconds for extended feedback
 
 String inputBuffer = "";                // User input buffer
 String resetSequence = "";              // Tracks reset code progress (e.g., "ABCD")
@@ -366,7 +397,7 @@ void handleMaxSelection(char key) {
       if (maxMultiplier >= 0 && maxMultiplier <= 99) {
         if (maxMultiplier < minMultiplier) {
           showError("MAX < MIN!");
-          delay(3000);
+          delay(500);
           showMaxSelection();
         } else {
           // ALL CONFIGURATION COMPLETE - START GAMEPLAY
@@ -440,7 +471,7 @@ void handleAnswerInput(char key) {
       if (userAnswer == answer) {
         handleCorrectAnswer();
       } else {
-        handleIncorrectAnswer(userAnswer);
+        handleIncorrectAnswer();
       }
     } else {
       showError("Enter answer!");
@@ -451,53 +482,43 @@ void handleAnswerInput(char key) {
 
 void handleCorrectAnswer() {
   currentState = STATE_CORRECT;
-  lastActionTime = millis();
+  lastActionTime = millis();  // Start 2.5-second feedback timer
   
   digitalWrite(GREEN_LED, HIGH);
   digitalWrite(RED_LED, LOW);
   
-  // Victory melody
-  tone(BUZZER_PIN, 1000, 120); delay(260);
-  tone(BUZZER_PIN, 1500, 120); delay(260);
-  tone(BUZZER_PIN, 2000, 120); delay(260);
-  tone(BUZZER_PIN, 1000, 120); delay(260);
-  tone(BUZZER_PIN, 1500, 120); delay(260);
-  tone(BUZZER_PIN, 2000, 120); delay(260);
-  tone(BUZZER_PIN, 1000, 120); delay(260);
-  tone(BUZZER_PIN, 1500, 120); delay(260);
-  tone(BUZZER_PIN, 2000, 120); delay(260);
-
-  noTone(BUZZER_PIN);
+  // Play extended victory melody (non-blocking friendly)
+  playVictoryMelody();
   
+  // Show celebratory message immediately
   lcd.clear();
   delay(2);
   lcd.setCursor(0, 0);
   lcd.print("CORRECT! :)");
   lcd.setCursor(0, 1);
-  lcd.print("Congratulations !!");
-
+  lcd.print("Excellent Work!");
+  // LEDs stay ON until state changes (handled in main loop)
 }
 
-void handleIncorrectAnswer(int userAnswer) {
+void handleIncorrectAnswer() {
   currentState = STATE_INCORRECT;
-  lastActionTime = millis();
+  lastActionTime = millis();  // Start 2.5-second feedback timer
   
   digitalWrite(RED_LED, HIGH);
   digitalWrite(GREEN_LED, LOW);
   
-  // Error sound
-  tone(BUZZER_PIN, 300, 300); 
-  delay(2000);
-  noTone(BUZZER_PIN);
+  // Play extended error sound
+  playErrorSound();
   
+  // Show helpful feedback immediately
   lcd.clear();
   delay(2);
   lcd.setCursor(0, 0);
-  lcd.print("Wrong! ");
-  lcd.print(userAnswer);
+  lcd.print("Try Again!");
   lcd.setCursor(0, 1);
-  lcd.print("Correct: ");
+  lcd.print("Correct is: ");
   lcd.print(answer);
+  // LEDs stay ON until state changes (handled in main loop)
 }
 
 // ====== UTILITY FUNCTIONS ======
